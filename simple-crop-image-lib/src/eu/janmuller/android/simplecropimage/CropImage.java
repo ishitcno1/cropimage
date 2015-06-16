@@ -19,6 +19,7 @@ package eu.janmuller.android.simplecropimage;
 
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -44,6 +45,7 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.StatFs;
+import android.text.TextUtils;
 import android.util.Log;
 import android.view.View;
 import android.view.Window;
@@ -59,7 +61,9 @@ public class CropImage extends MonitoredActivity {
     final int IMAGE_MAX_SIZE = 1024;
 
     private static final String TAG                    = "CropImage";
-    public static final  String IMAGE_PATH             = "image-path";
+//    public static final  String IMAGE_PATH             = "image-path";
+    public static final  String IMAGE_URI             = "image-uri";
+    public static final  String SAVE_NAME             = "save-name";
     public static final  String SCALE                  = "scale";
     public static final  String ORIENTATION_IN_DEGREES = "orientation_in_degrees";
     public static final  String ASPECT_X               = "aspectX";
@@ -74,7 +78,8 @@ public class CropImage extends MonitoredActivity {
 
     // These are various options can be specified in the intent.
     private       Bitmap.CompressFormat mOutputFormat    = Bitmap.CompressFormat.JPEG;
-    private       Uri                   mSaveUri         = null;
+//    private       Uri                   mSaveUri         = null;
+    private       String                mSaveName        = null;
     private       boolean               mDoFaceDetection = true;
     private       boolean               mCircleCrop      = false;
     private final Handler               mHandler         = new Handler();
@@ -87,7 +92,8 @@ public class CropImage extends MonitoredActivity {
     private CropImageView   mImageView;
     private ContentResolver mContentResolver;
     private Bitmap          mBitmap;
-    private String          mImagePath;
+//    private String          mImagePath;
+    private Uri             mImageUri;
 
     boolean       mWaitingToPick; // Whether we are wait the user to pick a face.
     boolean       mSaving;  // Whether the "save" button is already clicked.
@@ -119,19 +125,19 @@ public class CropImage extends MonitoredActivity {
 
             if (extras.getString(CIRCLE_CROP) != null) {
 
-        	if (Build.VERSION.SDK_INT > Build.VERSION_CODES.HONEYCOMB) {
-            		mImageView.setLayerType(View.LAYER_TYPE_SOFTWARE, null);
-        	}
+            if (Build.VERSION.SDK_INT > Build.VERSION_CODES.HONEYCOMB) {
+                    mImageView.setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+            }
 
                 mCircleCrop = true;
                 mAspectX = 1;
                 mAspectY = 1;
             }
 
-            mImagePath = extras.getString(IMAGE_PATH);
+            mImageUri = extras.getParcelable(IMAGE_URI);
 
-            mSaveUri = getImageUri(mImagePath);
-            mBitmap = getBitmap(mImagePath);
+            mSaveName = extras.getString(SAVE_NAME);
+            mBitmap = getBitmap(mImageUri);
 
             if (extras.containsKey(ASPECT_X) && extras.get(ASPECT_X) instanceof Integer) {
 
@@ -213,9 +219,8 @@ public class CropImage extends MonitoredActivity {
         return Uri.fromFile(new File(path));
     }
 
-    private Bitmap getBitmap(String path) {
+    private Bitmap getBitmap(Uri uri) {
 
-        Uri uri = getImageUri(path);
         InputStream in = null;
         try {
             in = mContentResolver.openInputStream(uri);
@@ -240,9 +245,9 @@ public class CropImage extends MonitoredActivity {
 
             return b;
         } catch (FileNotFoundException e) {
-            Log.e(TAG, "file " + path + " not found");
+            Log.e(TAG, "file not found");
         } catch (IOException e) {
-            Log.e(TAG, "file " + path + " not found");
+            Log.e(TAG, "file not found");
         }
         return null;
     }
@@ -289,7 +294,6 @@ public class CropImage extends MonitoredActivity {
 
 
     private void onSaveClicked() throws Exception {
-        // TODO this code needs to change to use the decode/crop/encode single
         // step api so that we don't require that the whole (possibly large)
         // bitmap doesn't have to be read into memory
         if (mSaving) return;
@@ -342,7 +346,7 @@ public class CropImage extends MonitoredActivity {
             c.drawColor(0x00000000, PorterDuff.Mode.CLEAR);
         }
 
-		/* If the output is required to a specific size then scale or fill */
+        /* If the output is required to a specific size then scale or fill */
         if (mOutputX != 0 && mOutputY != 0) {
 
             if (mScale) {
@@ -357,10 +361,10 @@ public class CropImage extends MonitoredActivity {
                 }
             } else {
 
-				/* Don't scale the image crop it to the size requested.
+                /* Don't scale the image crop it to the size requested.
                  * Create an new image with the cropped image in the center and
-				 * the extra space filled.
-				 */
+                 * the extra space filled.
+                 */
 
                 // Don't scale the image but instead fill it so it's the
                 // required dimension
@@ -374,16 +378,16 @@ public class CropImage extends MonitoredActivity {
                 int dx = (srcRect.width() - dstRect.width()) / 2;
                 int dy = (srcRect.height() - dstRect.height()) / 2;
 
-				/* If the srcRect is too big, use the center part of it. */
+                /* If the srcRect is too big, use the center part of it. */
                 srcRect.inset(Math.max(0, dx), Math.max(0, dy));
 
-				/* If the dstRect is too big, use the center part of it. */
+                /* If the dstRect is too big, use the center part of it. */
                 dstRect.inset(Math.max(0, -dx), Math.max(0, -dy));
 
-				/* Draw the cropped bitmap in the center */
+                /* Draw the cropped bitmap in the center */
                 canvas.drawBitmap(mBitmap, srcRect, dstRect, null);
 
-				/* Set the cropped bitmap as the new bitmap */
+                /* Set the cropped bitmap as the new bitmap */
                 croppedImage.recycle();
                 croppedImage = b;
             }
@@ -413,28 +417,26 @@ public class CropImage extends MonitoredActivity {
 
     private void saveOutput(Bitmap croppedImage) {
 
-        if (mSaveUri != null) {
-            OutputStream outputStream = null;
+        if (!TextUtils.isEmpty(mSaveName)) {
+            FileOutputStream fos = null;
             try {
-                outputStream = mContentResolver.openOutputStream(mSaveUri);
-                if (outputStream != null) {
-                    croppedImage.compress(mOutputFormat, 90, outputStream);
+                fos = openFileOutput(mSaveName, MODE_PRIVATE);
+                if (fos != null) {
+                    croppedImage.compress(mOutputFormat, 90, fos);
                 }
             } catch (IOException ex) {
 
-                Log.e(TAG, "Cannot open file: " + mSaveUri, ex);
+                Log.e(TAG, "Cannot open file: " + mSaveName);
                 setResult(RESULT_CANCELED);
                 finish();
                 return;
             } finally {
 
-                Util.closeSilently(outputStream);
+                Util.closeSilently(fos);
             }
 
-            Bundle extras = new Bundle();
-            Intent intent = new Intent(mSaveUri.toString());
-            intent.putExtras(extras);
-            intent.putExtra(IMAGE_PATH, mImagePath);
+            Intent intent = new Intent();
+            intent.putExtra(SAVE_NAME, mSaveName);
             intent.putExtra(ORIENTATION_IN_DEGREES, Util.getOrientationInDegree(this));
             setResult(RESULT_OK, intent);
         } else {
@@ -644,7 +646,7 @@ public class CropImage extends MonitoredActivity {
 
         if (noStorageText != null) {
 
-            Toast.makeText(activity, noStorageText, 5000).show();
+            Toast.makeText(activity, noStorageText, Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -654,14 +656,14 @@ public class CropImage extends MonitoredActivity {
             /*if (!ImageManager.hasStorage()) {
                 return NO_STORAGE_ERROR;
             } else {*/
-        	String storageDirectory = "";
-        	String state = Environment.getExternalStorageState();
-        	if (Environment.MEDIA_MOUNTED.equals(state)) {
-        		storageDirectory = Environment.getExternalStorageDirectory().toString();
-        	}
-        	else {
-        		storageDirectory = activity.getFilesDir().toString();
-        	}
+            String storageDirectory = "";
+            String state = Environment.getExternalStorageState();
+            if (Environment.MEDIA_MOUNTED.equals(state)) {
+                storageDirectory = Environment.getExternalStorageDirectory().toString();
+            }
+            else {
+                storageDirectory = activity.getFilesDir().toString();
+            }
             StatFs stat = new StatFs(storageDirectory);
             float remaining = ((float) stat.getAvailableBlocks()
                     * (float) stat.getBlockSize()) / 400000F;

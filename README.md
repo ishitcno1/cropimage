@@ -37,8 +37,11 @@ private void runCropImage() {
     Intent intent = new Intent(this, CropImage.class);
     
     // tell CropImage activity to look for image to crop 
-    String filePath = ...;
-    intent.putExtra(CropImage.IMAGE_PATH, filePath);
+    Uri uri = ...;
+    intent.putExtra(CropImage.IMAGE_URI, uri);
+    // tell CropImage activity where to store, default in internal storage
+    String filename = ...;
+    intent.putExtra(CropImage.SAVE_NAME, filename);
     
     // allow CropImage activity to rescale image
     intent.putExtra(CropImage.SCALE, true);
@@ -67,16 +70,16 @@ protected void onActivityResult(int requestCode, int resultCode, Intent data) {
 
         case REQUEST_CODE_CROP_IMAGE:
 
-            String path = data.getStringExtra(CropImage.IMAGE_PATH);
+            String filename = data.getStringExtra(CropImage.SAVE_NAME);
             
             // if nothing received
-            if (path == null) {
+            if (TextUtils.isEmpty(filename)) {
 
                 return;
             }
 
             // cropped bitmap
-            Bitmap bitmap = BitmapFactory.decodeFile(mFileTemp.getPath());
+            File file = new File(getFilesDir(), filename);
             
             break;
     }
